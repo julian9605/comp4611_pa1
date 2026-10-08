@@ -1,0 +1,13 @@
+cycle,stage,seq,pc,detail
+1,IF,1,0,LW
+2,ID,1,0,issue
+2,IF,2,1,ADD
+3,EX,1,0,LW
+3,ID,2,1,stall_mask=1
+4,MEM,1,0,LW
+4,ID,2,1,stall_mask=1
+5,WB,1,0,LW
+5,ID,2,1,issue
+6,EX,2,1,ADD
+7,MEM,2,1,ADD
+8,WB,2,1,ADD

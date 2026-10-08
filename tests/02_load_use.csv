@@ -1,0 +1,14 @@
+cycle,stage,seq,pc,detail
+1,IF,1,0,LW
+2,ID,1,0,issue
+2,IF,2,1,ADD
+3,EX,1,0,LW
+3,ID,2,1,stall_mask=1
+4,MEM,1,0,LW
+4,ID,2,1,issue
+5,WB,1,0,LW
+5,EX,2,1,ADD
+5,FWD_WB_EX,2,1,src1_from=1
+5,FWD_WB_EX,2,1,src2_from=1
+6,MEM,2,1,ADD
+7,WB,2,1,ADD

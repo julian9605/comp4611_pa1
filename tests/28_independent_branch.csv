@@ -1,0 +1,14 @@
+cycle,stage,seq,pc,detail
+1,IF,1,0,BEQ
+2,ID,1,0,issue
+2,IF_STALL,0,1,stall=2
+3,EX,1,0,BEQ
+3,BRANCH_EX,1,0,taken
+3,IF_STALL,0,3,stall=1
+4,MEM,1,0,BEQ
+4,IF,2,3,ADDI
+5,WB,1,0,BEQ
+5,ID,2,3,issue
+6,EX,2,3,ADDI
+7,MEM,2,3,ADDI
+8,WB,2,3,ADDI
