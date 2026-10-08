@@ -1,6 +1,6 @@
 /* COMP4611: Pipeline Hazards
- * Name:
- * ITSC email:
+ * Name: KWAN Bo Cheong Julian
+ * ITSC email: bcjkwan@connect.ust.hk
  * Acknowledgements:
  * Complete three read-only ID checks and one IF check. Submit only this file.
  * Infer instruction timing from inst and the hardware rules in the handout.
