@@ -15,9 +15,56 @@ int check_raw_hazard(int cycle, Op inst, int src1, int src2, int dst,
      * arrive through the RF or enabled forwarding paths. Distinguish store
      * base/data and exact path cycles. Return the required stall without
      * changing any register record or WB reservation. */
-    (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
-    (void)forwarding; (void)state;
-    return 0;
+    // (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
+    // (void)forwarding; (void)state;
+    
+    // cycle: candidate cycle for ID    
+
+    // first check src1 and src2, if they had been written earlier
+    // *_last_written: their WB cycles
+    int src1_last_written = state->writers[src1].write_cycle;
+    int src2_last_written = state->writers[src2].write_cycle;
+    int later_cycle; // the scheduled WB cycle
+    Op prev_op;
+
+    if (src1_last_written > src2_last_written) {
+        later_cycle = src1_last_written;
+        prev_op = state->writers[src1].writer_op;
+    }
+    else {
+        later_cycle = src2_last_written;
+        prev_op = state->writers[src2].writer_op;
+    }
+
+    int ex_cycles = 1;
+    if (prev_op == FADD || prev_op == FSUB) {
+        ex_cycles = 4;
+    }
+    else if (prev_op == FMUL) {
+        ex_cycles = 7;
+    }
+    else if (prev_op == FDIV) {
+        ex_cycles = 24;
+    }
+
+    int stalls = 0;
+    if (forwarding) {
+        // forwarding enabled
+        // WB-to-EX
+        if (inst == LW || inst == SW || inst == FLD || inst == FST) {
+            
+        }
+        // MEM-to-EX
+        else {
+
+        }
+        // WB-to-MEM
+    }
+    else {
+
+    }
+        
+    return stalls;
 }
 
 int check_waw_hazard(int cycle, Op inst, int src1, int src2, int dst,
