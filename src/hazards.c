@@ -18,50 +18,49 @@ int check_raw_hazard(int cycle, Op inst, int src1, int src2, int dst,
     // (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
     // (void)forwarding; (void)state;
     
+    // ADD R1, R2, R3 
+    // LW R5, 0($s0)
+    // ADD R4, R1, R5 
+
     // cycle: candidate cycle for ID    
 
     // first check src1 and src2, if they had been written earlier
     // *_last_written: their WB cycles
     int src1_last_written = state->writers[src1].write_cycle;
     int src2_last_written = state->writers[src2].write_cycle;
-    int later_cycle; // the scheduled WB cycle
-    Op prev_op;
-
-    if (src1_last_written > src2_last_written) {
-        later_cycle = src1_last_written;
-        prev_op = state->writers[src1].writer_op;
-    }
-    else {
-        later_cycle = src2_last_written;
-        prev_op = state->writers[src2].writer_op;
-    }
-
-    int ex_cycles = 1;
-    if (prev_op == FADD || prev_op == FSUB) {
-        ex_cycles = 4;
-    }
-    else if (prev_op == FMUL) {
-        ex_cycles = 7;
-    }
-    else if (prev_op == FDIV) {
-        ex_cycles = 24;
-    }
+    int later_cycle = max(src1_last_written, src2_last_written); // the scheduled WB cycle
+    Op prev_op = (src1_last_written > src2_last_written) ? state->writers[src1].writer_op : state->writers[src2].writer_op;
 
     int stalls = 0;
     if (forwarding) {
         // forwarding enabled
-        // WB-to-EX
-        if (inst == LW || inst == SW || inst == FLD || inst == FST) {
-            
-        }
-        // MEM-to-EX
-        else {
+        if (later_cycle > cycle) {
+            // when does this instruction need this data?
+            // when can the previous instruction provide this data?
 
+            // needs it at EX stage
+            if (inst == ADD || inst == SUB || inst == ADDI || inst == FADD || inst == FSUB || inst == FMUL || inst == FDIV || inst == BEQ || inst == BNE) {
+                // MEM-to-EX, can provide at the end of previous EX
+                if (prev_op == ADD || prev_op == SUB || prev_op == ADDI || prev_op == FADD || prev_op == FSUB || prev_op == FMUL || prev_op == FDIV) {
+                    int new_id = later_cycle - 1;
+                    stalls += new_id - cycle;
+                }
+                // WB-to-EX, can provide at the end of previous MEM
+                else if (prev_op == LW || prev_op == FLD) {
+                    int new_id = later_cycle - 1 - ex_latency(inst);
+                    stalls += new_id - cycle;
+                }
+            }
+            // needs it at MEM stage
+            else if (inst == SW || inst == FST) {
+                // WB-to-MEM
+
+            }
         }
-        // WB-to-MEM
     }
     else {
-
+        // no forwarding
+        stalls = later_cycle - cycle;
     }
         
     return stalls;
