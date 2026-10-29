@@ -8,90 +8,118 @@
  */
 #include "hazards.h"
 
+/* Return the later of two candidate cycles. */
+static int max_int(int a, int b)
+{
+    return a > b ? a : b;
+}
+
+/* Return the number of EX cycles occupied by an instruction. */
+static int ex_cycles(Op op)
+{
+    if (op == FADD || op == FSUB) return 4;
+    if (op == FMUL) return 7;
+    if (op == FDIV) return 24;
+    return 1;
+}
+
+/* Loads produce their value at the end of MEM, not at the end of EX. */
+static bool is_load(Op op)
+{
+    return op == LW || op == FLD;
+}
+
+/* -1 means no operand; integer R0 is constant and cannot create a hazard. */
+static bool is_ignored_register(int reg)
+{
+    return reg < 0 || reg == 0;
+}
+
+static int source_ready_cycle(int cycle, int source, bool store_data,
+                              bool forwarding, const Scoreboard *state)
+{
+    if (is_ignored_register(source)) return cycle;
+
+    RegisterWriter writer = state->writers[source];
+    if (writer.write_cycle == 0) return cycle;
+    if (!forwarding) return writer.write_cycle;
+
+    if (store_data) {
+        /* Store data is consumed in MEM, so WB->MEM is available two
+         * cycles after the consumer completes ID. */
+        return writer.write_cycle - 2;
+    }
+
+    /* All non-store operands are consumed at the beginning of EX. */
+    return writer.write_cycle - (is_load(writer.writer_op) ? 1 : 2);
+}
+
+/*
+ * Find the minimum ID stall for both source operands. Ordinary operands are
+ * consumed at EX; store data is consumed one stage later at MEM and can use
+ * the WB-to-MEM path. Each source is evaluated independently because the
+ * sources may have different producers and forwarding requirements.
+ */
 int check_raw_hazard(int cycle, Op inst, int src1, int src2, int dst,
                      bool forwarding, const Scoreboard *state)
 {
-    /* TODO 1: Find the earliest ID cycle where BOTH old source values can
-     * arrive through the RF or enabled forwarding paths. Distinguish store
-     * base/data and exact path cycles. Return the required stall without
-     * changing any register record or WB reservation. */
-    // (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
-    // (void)forwarding; (void)state;
-    
-    // ADD R1, R2, R3 
-    // LW R5, 0($s0)
-    // ADD R4, R1, R5 
-
-    // cycle: candidate cycle for ID    
-
-    // first check src1 and src2, if they had been written earlier
-    // *_last_written: their WB cycles
-    int src1_last_written = state->writers[src1].write_cycle;
-    int src2_last_written = state->writers[src2].write_cycle;
-    int later_cycle = max(src1_last_written, src2_last_written); // the scheduled WB cycle
-    Op prev_op = (src1_last_written > src2_last_written) ? state->writers[src1].writer_op : state->writers[src2].writer_op;
-
-    int stalls = 0;
-    if (forwarding) {
-        // forwarding enabled
-        if (later_cycle > cycle) {
-            // when does this instruction need this data?
-            // when can the previous instruction provide this data?
-
-            // needs it at EX stage
-            if (inst == ADD || inst == SUB || inst == ADDI || inst == FADD || inst == FSUB || inst == FMUL || inst == FDIV || inst == BEQ || inst == BNE) {
-                // MEM-to-EX, can provide at the end of previous EX
-                if (prev_op == ADD || prev_op == SUB || prev_op == ADDI || prev_op == FADD || prev_op == FSUB || prev_op == FMUL || prev_op == FDIV) {
-                    int new_id = later_cycle - 1;
-                    stalls += new_id - cycle;
-                }
-                // WB-to-EX, can provide at the end of previous MEM
-                else if (prev_op == LW || prev_op == FLD) {
-                    int new_id = later_cycle - 1 - ex_latency(inst);
-                    stalls += new_id - cycle;
-                }
-            }
-            // needs it at MEM stage
-            else if (inst == SW || inst == FST) {
-                // WB-to-MEM
-
-            }
-        }
-    }
-    else {
-        // no forwarding
-        stalls = later_cycle - cycle;
-    }
-        
-    return stalls;
+    (void)dst;
+    int required = source_ready_cycle(cycle, src1, false, forwarding, state);
+    if (inst == SW || inst == FST)
+        required = max_int(required, source_ready_cycle(cycle, src2, true,
+                                                        forwarding, state));
+    else
+        required = max_int(required, source_ready_cycle(cycle, src2, false,
+                                                        forwarding, state));
+    return required > cycle ? required - cycle : 0;
 }
 
+/*
+ * Prevent a younger instruction from writing a destination before or in the
+ * same cycle as its previous writer. The candidate WB cycle is derived from
+ * the candidate ID cycle and the instruction's EX latency.
+ */
 int check_waw_hazard(int cycle, Op inst, int src1, int src2, int dst,
                      bool forwarding, const Scoreboard *state)
 {
-    /* TODO 2: Derive candidate WB and compare with the old destination writer.
-     * Return the minimum stall without changing the records. */
-    (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
-    (void)forwarding; (void)state;
-    return 0;
+    (void)src1;
+    (void)src2;
+    (void)forwarding;
+    if (is_ignored_register(dst)) return 0;
+
+    int candidate_wb = cycle + ex_cycles(inst) + 2;
+    int previous_wb = state->writers[dst].write_cycle;
+    return candidate_wb <= previous_wb ? previous_wb + 1 - candidate_wb : 0;
 }
 
+/*
+ * Avoid collisions on the single shared WB path. Starting at the candidate
+ * WB cycle, advance one cycle at a time until an unreserved slot is found.
+ */
 int check_wb_hazard(int cycle, Op inst, int src1, int src2, int dst,
                     bool forwarding, const Scoreboard *state)
 {
-    /* TODO 3: Derive candidate WB and find its first free shared-path slot.
-     * Return the minimum stall; the framework reserves the final slot.
-     * Every instruction uses this path, including stores and branches. */
-    (void)cycle; (void)inst; (void)src1; (void)src2; (void)dst;
-    (void)forwarding; (void)state;
-    return 0;
+    (void)src1;
+    (void)src2;
+    (void)dst;
+    (void)forwarding;
+    int stall = 0;
+    int candidate_wb = cycle + ex_cycles(inst) + 2;
+    while (candidate_wb < NUM_CYCLES && state->wb_reserved[candidate_wb]) {
+        ++stall;
+        ++candidate_wb;
+    }
+    return stall;
 }
 
+/*
+ * A branch completes ID in branch_id_cycle, begins EX in the next cycle, and
+ * resolves at the end of that EX cycle. Therefore the next fetch may start
+ * two cycles after the branch's ID completion.
+ */
 int check_control_hazard(int cycle, int branch_id_cycle)
 {
-    /* TODO 4: Derive when the pending EX-resolved branch releases IF.
-     * Return the IF stall, or zero when fetching is allowed.
-     * A branch_id_cycle of -1 means no branch is pending. */
-    (void)cycle; (void)branch_id_cycle;
-    return 0;
+    if (branch_id_cycle < 0) return 0;
+    int release_cycle = branch_id_cycle + 2;
+    return release_cycle > cycle ? release_cycle - cycle : 0;
 }
