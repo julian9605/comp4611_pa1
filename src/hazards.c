@@ -54,15 +54,13 @@ static int source_ready_cycle(int cycle, int source, bool store_data,
     return writer.write_cycle - (is_load(writer.writer_op) ? 1 : 2);
 }
 
-/*
- * Find the minimum ID stall for both source operands. Ordinary operands are
- * consumed at EX; store data is consumed one stage later at MEM and can use
- * the WB-to-MEM path. Each source is evaluated independently because the
- * sources may have different producers and forwarding requirements.
- */
 int check_raw_hazard(int cycle, Op inst, int src1, int src2, int dst,
                      bool forwarding, const Scoreboard *state)
 {
+    /* TODO 1: Find the earliest ID cycle where BOTH old source values can
+     * arrive through the RF or enabled forwarding paths. Distinguish store
+     * base/data and exact path cycles. Return the required stall without
+     * changing any register record or WB reservation. */
     (void)dst;
     int required = source_ready_cycle(cycle, src1, false, forwarding, state);
     if (inst == SW || inst == FST)
@@ -74,14 +72,11 @@ int check_raw_hazard(int cycle, Op inst, int src1, int src2, int dst,
     return required > cycle ? required - cycle : 0;
 }
 
-/*
- * Prevent a younger instruction from writing a destination before or in the
- * same cycle as its previous writer. The candidate WB cycle is derived from
- * the candidate ID cycle and the instruction's EX latency.
- */
 int check_waw_hazard(int cycle, Op inst, int src1, int src2, int dst,
                      bool forwarding, const Scoreboard *state)
 {
+    /* TODO 2: Derive candidate WB and compare with the old destination writer.
+     * Return the minimum stall without changing the records. */
     (void)src1;
     (void)src2;
     (void)forwarding;
@@ -92,13 +87,12 @@ int check_waw_hazard(int cycle, Op inst, int src1, int src2, int dst,
     return candidate_wb <= previous_wb ? previous_wb + 1 - candidate_wb : 0;
 }
 
-/*
- * Avoid collisions on the single shared WB path. Starting at the candidate
- * WB cycle, advance one cycle at a time until an unreserved slot is found.
- */
 int check_wb_hazard(int cycle, Op inst, int src1, int src2, int dst,
                     bool forwarding, const Scoreboard *state)
 {
+    /* TODO 3: Derive candidate WB and find its first free shared-path slot.
+     * Return the minimum stall; the framework reserves the final slot.
+     * Every instruction uses this path, including stores and branches. */
     (void)src1;
     (void)src2;
     (void)dst;
@@ -112,13 +106,11 @@ int check_wb_hazard(int cycle, Op inst, int src1, int src2, int dst,
     return stall;
 }
 
-/*
- * A branch completes ID in branch_id_cycle, begins EX in the next cycle, and
- * resolves at the end of that EX cycle. Therefore the next fetch may start
- * two cycles after the branch's ID completion.
- */
 int check_control_hazard(int cycle, int branch_id_cycle)
 {
+    /* TODO 4: Derive when the pending EX-resolved branch releases IF.
+     * Return the IF stall, or zero when fetching is allowed.
+     * A branch_id_cycle of -1 means no branch is pending. */
     if (branch_id_cycle < 0) return 0;
     int release_cycle = branch_id_cycle + 2;
     return release_cycle > cycle ? release_cycle - cycle : 0;
